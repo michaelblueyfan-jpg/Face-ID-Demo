@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Face ID Demo</title>
     
     <link rel="icon" type="image/png" href="Face_ID_Icon.png">
@@ -87,7 +87,7 @@
     </div>
 
     <div id="screen-3" class="absolute inset-0 bg-black text-white flex flex-col justify-between transition-opacity duration-300 opacity-0 pointer-events-none z-10 items-center">
-        <video id="webcam" class="absolute inset-0 w-full h-full object-cover hidden" autoplay playsinline muted></video>
+        <video id="webcam" class="hidden" autoplay playsinline muted></video>
         <canvas id="output_canvas" class="absolute inset-0 w-full h-full object-cover"></canvas>
         
         <div class="absolute inset-0 bg-black/40 pointer-events-none flex items-center justify-center">
@@ -145,7 +145,8 @@
         const progressText = document.getElementById('scan-progress-text');
         const instructionPrompt = document.getElementById('instruction-prompt');
         
-        let cameraActive = null;
+        let currentStream = null;
+        let animationFrameId = null;
         let progressSteps = { left: false, right: false };
         let completeTriggered = false;
 
@@ -166,6 +167,7 @@
             canvasCtx.save();
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
             
+            // Render webcam output to match device frame boundaries perfectly
             if (results.image) {
                 canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
             }
@@ -182,9 +184,9 @@
 
                 progressText.style.color = '#60a5fa';
                 
-                if (ratio > 1.7) {
+                if (ratio > 1.6) {
                     progressSteps.left = true;
-                } else if (ratio < 0.58) {
+                } else if (ratio < 0.6) {
                     progressSteps.right = true;
                 }
 
@@ -226,22 +228,42 @@
             progressSteps = { left: false, right: false };
             goToScreen(3);
             
-            // Fixed configuration constraints to match crisp high-def portrait formats on iOS
-            cameraActive = new Camera(videoElement, {
-                onFrame: async () => {
-                    await faceMesh.send({ image: videoElement });
-                },
-                width: { ideal: 1080 },
-                height: { ideal: 1920 },
-                facingMode: "user"
-            });
-            cameraActive.start();
+            try {
+                currentStream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: "user",
+                        width: { ideal: window.innerHeight },
+                        height: { ideal: window.innerWidth }
+                    },
+                    audio: false
+                });
+
+                videoElement.srcObject = currentStream;
+                videoElement.onloadedmetadata = () => {
+                    videoElement.play();
+                    tick();
+                };
+            } catch (err) {
+                console.error("iOS Camera error: ", err);
+            }
+        }
+
+        async function tick() {
+            if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA && !completeTriggered) {
+                await faceMesh.send({ image: videoElement });
+            }
+            if (currentStream) {
+                animationFrameId = requestAnimationFrame(tick);
+            }
         }
 
         function stopCameraDemo() {
-            if (cameraActive) {
-                cameraActive.stop();
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+                currentStream = null;
             }
+            videoElement.srcObject = null;
             goToScreen(2);
         }
     </script>
