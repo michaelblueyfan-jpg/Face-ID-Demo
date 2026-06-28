@@ -2,8 +2,14 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Face ID Demo</title>
+    
+    <link rel="icon" type="image/png" href="Face_ID_Icon.png">
+    <link rel="apple-touch-icon" href="Face_ID_Icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
@@ -20,7 +26,7 @@
         }
         .camera-mask {
             border: 4px solid rgba(255, 255, 255, 0.4);
-            border-radius: 9999px; /* Absolute circular layout tracking Apple UI */
+            border-radius: 9999px;
         }
     </style>
 </head>
@@ -140,10 +146,9 @@
         const instructionPrompt = document.getElementById('instruction-prompt');
         
         let cameraActive = null;
-        let progressSteps = { left: false, right: false, up: false, down: false };
+        let progressSteps = { left: false, right: false };
         let completeTriggered = false;
 
-        // Auto-scale target resolution metrics 
         function resizeCanvas() {
             canvasElement.width = window.innerWidth;
             canvasElement.height = window.innerHeight;
@@ -157,43 +162,32 @@
             document.getElementById(`screen-${screenNumber}`).classList.remove('opacity-0', 'pointer-events-none');
         }
 
-        // Processing loop logic parsing tracked metrics from MediaPipe
         function onResults(results) {
             canvasCtx.save();
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
             
-            // Draw pure raw webcam background capture onto layer
             if (results.image) {
                 canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
             }
 
             if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0 && !completeTriggered) {
                 const landmarks = results.multiFaceLandmarks[0];
-                
-                // Track geometric orientation anchor vectors (Nose tip vs temple edges)
                 const noseTip = landmarks[1];
                 const leftCheek = landmarks[234];
                 const rightCheek = landmarks[454];
 
-                // Simple structural depth offsets 
                 const leftDist = Math.abs(noseTip.x - leftCheek.x);
                 const rightDist = Math.abs(noseTip.x - rightCheek.x);
                 const ratio = leftDist / rightDist;
 
                 progressText.style.color = '#60a5fa';
                 
-                // State machine evaluating head positions
-                if (ratio > 1.8) {
+                if (ratio > 1.7) {
                     progressSteps.left = true;
-                } else if (ratio < 0.55) {
+                } else if (ratio < 0.58) {
                     progressSteps.right = true;
-                } else if (noseTip.y < landmarks[10].y + 0.05) {
-                    progressSteps.up = true;
-                } else if (noseTip.y > landmarks[152].y - 0.22) {
-                    progressSteps.down = true;
                 }
 
-                // Update instruction text dynamically
                 if (!progressSteps.left) {
                     instructionPrompt.innerHTML = "Turn your head slowly<br>to the Left.";
                     progressText.innerText = "Scanning: Look Left";
@@ -215,7 +209,6 @@
             canvasCtx.restore();
         }
 
-        // Initialize FaceMesh Processor options
         const faceMesh = new FaceMesh({
             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
         });
@@ -230,15 +223,17 @@
 
         async function startCameraDemo() {
             completeTriggered = false;
-            progressSteps = { left: false, right: false, up: false, down: false };
+            progressSteps = { left: false, right: false };
             goToScreen(3);
             
+            // Fixed configuration constraints to match crisp high-def portrait formats on iOS
             cameraActive = new Camera(videoElement, {
                 onFrame: async () => {
                     await faceMesh.send({ image: videoElement });
                 },
-                width: 640,
-                height: 480
+                width: { ideal: 1080 },
+                height: { ideal: 1920 },
+                facingMode: "user"
             });
             cameraActive.start();
         }
